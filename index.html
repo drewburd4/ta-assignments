@@ -1851,7 +1851,10 @@ function renderCourseFilters() {
   const statusOpts = [['all', 'All courses'], ['open', 'Needs TAs'], ['full', 'All TAs assigned']];
   const qOpts = [['all', 'All quarters']].concat(QUARTERS_ALL.map(q => [q, q]));
   const priorOpts = [['all', 'All priorities'], ['High', 'High'], ['Medium', 'Medium'], ['Low', 'Low']];
-  const trackOpts = [['all', 'All instructors'], ['tenure', 'Tenure-track'], ['instructional', 'Instructional'], ['other', 'Visiting / other']];
+  // "Visiting / other" appears only if some course actually carries that tag (an instructor
+  // the parser couldn't classify); with everyone classified, the option stays hidden.
+  const trackOpts = [['all', 'All instructors'], ['tenure', 'Tenure-track'], ['instructional', 'Instructional']];
+  if (COURSES.some(c => (c.instructorTracks || []).includes('other'))) trackOpts.push(['other', 'Visiting / other']);
   const fOpts = [['all', 'All fields']].concat(FIELDS.map(f => [f, f]));
   function build(elemId, opts, kind) {
     document.getElementById(elemId).innerHTML = `
