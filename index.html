@@ -482,7 +482,8 @@ Check your Browserslist config to be sure that your targets are set up correctly
 <div id="detail-panel" class="detail-panel">
   <div id="detail-content"></div>
 </div>
-<div id="detail-backdrop" class="fixed inset-0 bg-black bg-opacity-10 hidden z-40" onclick="closeDetail()"></div>
+<!-- No backdrop behind the detail panel: a click outside closes it WITHOUT being swallowed,
+     so opening a filter or another row is one click, not close-then-click. -->
 
 <div id="toast" class="toast"></div>
 
@@ -1868,7 +1869,8 @@ function renderCourseFilters() {
 
 function setCourseFilter(kind, v) {
   state.courseFilters[kind] = v;
-  renderCourseFilters();
+  // Only the table re-renders. The changed select already shows its new value natively;
+  // rebuilding all five selects here could eat a click landing on a neighboring one.
   renderCourses();
 }
 
@@ -1988,7 +1990,7 @@ function renderStudentFilters() {
 }
 function setStudentFilter(kind, v) {
   state.studentFilters[kind] = (kind === 'year' && v !== 'all') ? Number(v) : v;
-  renderStudentFilters(); renderStudents();
+  renderStudents();   // selects keep their own value; see setCourseFilter
 }
 
 function renderStudents() {
@@ -2076,8 +2078,8 @@ function renderMatchFilters() {
     </select>
   `;
 }
-function setMatchPriority(p) { state.matchPriority = p; renderMatching(); }
-function setMatchQuarter(q) { state.matchQuarter = q; renderMatching(); }
+function setMatchPriority(p) { state.matchPriority = p; renderMatchBoard(); }
+function setMatchQuarter(q) { state.matchQuarter = q; renderMatchBoard(); }
 
 function toggleFallbackSatisfied() {
   fallbackIncludeSatisfied = !fallbackIncludeSatisfied;
@@ -2098,6 +2100,10 @@ function clearFallbackFieldFilter() {
 
 function renderMatching() {
   renderMatchFilters();
+  renderMatchBoard();
+}
+// The board alone (filter selects untouched, so changing one can't eat a click on the other).
+function renderMatchBoard() {
   const filtered = COURSES.filter(c => passesMulti(state.matchPriority, c.priority) && passesMulti(state.matchQuarter, c.quarter));
 
   const sortByQuarterCode = (a, b) => ((QORDER[a.quarter] ?? 9) - (QORDER[b.quarter] ?? 9)) || a.code.localeCompare(b.code);
@@ -2919,8 +2925,25 @@ function openStudentDetail(id, fromOrKeep) {
 
 function showDetail() {
   document.getElementById('detail-panel').classList.add('open');
-  document.getElementById('detail-backdrop').classList.remove('hidden');
 }
+
+// A click anywhere outside the open panel closes it but is NOT swallowed: the same click
+// still opens the filter dropdown / row / button it landed on. The table re-render (which
+// clears the row highlight) is deferred past the click dispatch, or a row's own click
+// handler would find its element replaced and go dead.
+document.addEventListener('mousedown', e => {
+  const panel = document.getElementById('detail-panel');
+  if (!panel.classList.contains('open')) return;
+  if (panel.contains(e.target)) return;
+  panel.classList.remove('open');
+  state.selectedCourse = null;
+  state.selectedStudent = null;
+  state.navStack = [];
+  setTimeout(() => {
+    if (state.tab === 'courses') renderCourses();
+    if (state.tab === 'students') renderStudents();
+  }, 300);
+}, true);
 
 function navBack() {
   if (state.navStack.length === 0) { closeDetail(); return; }
@@ -2931,7 +2954,6 @@ function navBack() {
 
 function closeDetail() {
   document.getElementById('detail-panel').classList.remove('open');
-  document.getElementById('detail-backdrop').classList.add('hidden');
   state.selectedCourse = null;
   state.selectedStudent = null;
   state.navStack = [];
