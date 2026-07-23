@@ -176,6 +176,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
   .btn-icon { border: 0; background: transparent; color: var(--muted); padding: 3px 6px; font-size: 12px; line-height: 1; border-radius: 4px; cursor: pointer; }
   .btn-icon:hover { color: var(--red); background: var(--red-bg); }
   .btn-icon.is-on { color: var(--red); }
+  /* The reject ✕ gets a small red outline so it reads as "the reject control" at a glance,
+     while staying much quieter than the green Confirm beside it. */
+  .btn-icon.btn-reject { border: 1px solid var(--red); border-radius: 5px; color: var(--red); opacity: .55; padding: 2px 6px; }
+  .btn-icon.btn-reject:hover { opacity: 1; background: var(--red-bg); color: var(--red); }
   .chip-rejected { background: transparent; color: var(--red); border: 1px solid var(--red); font-size: 10px; padding: 0 5px; }
   .reject-reason { font-size: 11px; color: var(--red); font-style: italic; cursor: pointer; }
   .reject-reason-add { font-size: 11px; color: var(--muted); text-decoration: underline; cursor: pointer; background: none; border: 0; padding: 0; }
@@ -1275,7 +1279,7 @@ function rejectActionBtn(courseId, studentId, isConfirmed) {
   if (isConfirmed) return '';
   return isRejected(courseId, studentId)
     ? `<button class="btn-icon is-on" onclick="event.stopPropagation(); toggleReject('${courseId}', '${studentId}')" title="Undo the reject flag">↺</button>`
-    : `<button class="btn-icon" onclick="event.stopPropagation(); toggleReject('${courseId}', '${studentId}')" title="Flag this student as rejected for this course (visual marker only)">✕</button>`;
+    : `<button class="btn-icon btn-reject" onclick="event.stopPropagation(); toggleReject('${courseId}', '${studentId}')" title="Flag this student as rejected for this course (visual marker only)">✕</button>`;
 }
 
 // The "✕ rejected" badge and the reason line beneath it. Both render only while the flag is set.
@@ -1556,6 +1560,10 @@ function attemptConfirm(courseId, studentId) {
   } else if (s.confirmedCredits + c.mteCredits > Math.ceil(s.mteTarget)) {
     warnings.push(`${s.firstname} would be at ${fmtC(s.confirmedCredits + c.mteCredits)} MTE against a target of ${fmtC(s.mteTarget)} (${fmtC(s.confirmedCredits)} confirmed now). Confirming will create an MTE overrun conflict.`);
   }
+  if (isRejected(courseId, studentId)) {
+    const why = rejectReasonFor(courseId, studentId);
+    warnings.push(`You flagged ${s.firstname} ${s.lastname} as REJECTED for ${c.code}${why ? ` (“${why}”)` : ''}. Confirming will clear that reject flag.`);
+  }
   if (!studentPref && !facultyAsked) {
     warnings.push(`${s.firstname} did not rank ${c.code} and was not asked in advance by the instructor.`);
   } else if (!studentPref) {
@@ -1580,10 +1588,14 @@ function confirmAskedInAdvance(courseId, studentId) {
   const s = studentById(studentId);
   const cc = courseById(courseId);
   let warn = '';
+  if (isRejected(courseId, studentId)) {
+    const why = rejectReasonFor(courseId, studentId);
+    warn = `You flagged ${s.firstname} ${s.lastname} as REJECTED for ${cc.code}${why ? ` (“${why}”)` : ''}. Confirming will clear that reject flag.`;
+  }
   if (s.mteTarget === 0) {
-    warn = `${s.firstname} ${s.lastname} said they don't want to TA this year (0 desired MTEs). Confirming will exceed that.`;
+    warn = (warn ? warn + '\n\n' : '') + `${s.firstname} ${s.lastname} said they don't want to TA this year (0 desired MTEs). Confirming will exceed that.`;
   } else if (s.confirmedCredits + cc.mteCredits > Math.ceil(s.mteTarget)) {
-    warn = `${s.firstname} ${s.lastname} would be at ${fmtC(s.confirmedCredits + cc.mteCredits)} MTE against their desired ${fmtC(s.mteTarget)} (${fmtC(s.confirmedCredits)} confirmed now). Confirming will exceed that.`;
+    warn = (warn ? warn + '\n\n' : '') + `${s.firstname} ${s.lastname} would be at ${fmtC(s.confirmedCredits + cc.mteCredits)} MTE against their desired ${fmtC(s.mteTarget)} (${fmtC(s.confirmedCredits)} confirmed now). Confirming will exceed that.`;
   }
   const sib = confirmedSiblingOf(courseId, studentId);
   if (sib) warn = (warn ? warn + '\n\n' : '') + `${s.firstname} ${s.lastname} is already confirmed on ${sib.code}, the sibling section of this combined listing.`;
@@ -2418,10 +2430,17 @@ function renderConflicts() {
   window._conflicts = Object.fromEntries(allItems.map(i => [i.id, i.action]));
 }
 
+// The human-readable title of a conflict, for the change log (the raw id is machine goo).
+function conflictTitle(id) {
+  const item = collectConflicts().find(i => i.id === id);
+  return item ? item.title : id;
+}
 function resolveConflict(id) {
+  const title = conflictTitle(id);
   resolvedConflicts.add(id);
   persistState();
   remoteUpsert('ta_resolved_conflicts', { conflict_id: id });
+  logChange(`Marked a conflict resolved: ${title}`);
   renderConflicts();
   showToast('Marked as resolved.');
 }
@@ -2430,6 +2449,7 @@ function unresolveConflict(id) {
   resolvedConflicts.delete(id);
   persistState();
   remoteDelete('ta_resolved_conflicts', { conflict_id: id });
+  logChange(`Reopened a conflict: ${conflictTitle(id)}`);
   renderConflicts();
 }
 
